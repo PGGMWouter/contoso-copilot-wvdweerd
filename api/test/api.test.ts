@@ -55,11 +55,42 @@ describe('Contoso API', () => {
     const body = await res.json();
     assert.equal(body.retirementAge, 68);
     assert.ok(body.projectedAnnualPension > body.accruedToDate);
+    assert.equal(body.earlyRetirementReduction, 0);
+    assert.equal(body.unreducedAnnualPension, body.projectedAnnualPension);
   });
 
-  test('POST /api/projections returns 422 for early retirement (backlog)', async () => {
+  test('POST /api/projections projects early retirement for M-1004', async () => {
     const res = await api.post('/api/projections', { memberId: 'M-1004', retirementAge: 63 });
-    assert.equal(res.status, 422);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.retirementDate, '2029-06-30');
+    assert.equal(body.yearsToRetirement, 3);
+    assert.equal(body.futureAccrual, 3_379.11);
+    assert.equal(body.earlyRetirementReduction, 0.325);
+    assert.equal(body.unreducedAnnualPension, 13_802.81);
+    assert.equal(body.projectedAnnualPension, 9_316.90);
+  });
+
+  test('POST /api/projections rejects invalid retirement ages with the error envelope', async () => {
+    for (const input of [
+      { memberId: 'M-1004', retirementAge: 59 },
+      { memberId: 'M-1004', retirementAge: 69 },
+      { memberId: 'M-1006', retirementAge: 66 },
+    ]) {
+      const res = await api.post('/api/projections', input);
+      assert.equal(res.status, 422);
+      const body = await res.json();
+      assert.equal(body.error.code, 'UNPROCESSABLE');
+      assert.equal(typeof body.error.message, 'string');
+    }
+  });
+
+  test('POST /api/projections rejects non-integer retirement ages as malformed input', async () => {
+    const res = await api.post('/api/projections', { memberId: 'M-1004', retirementAge: 63.5 });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error.code, 'BAD_REQUEST');
+    assert.deepEqual(body.error.details, ['retirementAge must be an integer']);
   });
 
   test('POST /api/projections validates the body', async () => {
